@@ -56,6 +56,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1);
 const APP_ACCESS_KEY = process.env.APP_ACCESS_KEY?.trim() || '';
+const CHAT_BODY_LIMIT = process.env.CHAT_BODY_LIMIT || '64mb';
 const ACCESS_COOKIE = 'ei_access';
 const ACCESS_SESSION_MS = 12 * 60 * 60 * 1000;
 const loginAttempts = new Map();
@@ -89,7 +90,7 @@ const NVIDIA_MODEL_CAPABILITIES = {
 };
 const discoveredModelCapabilities = new Map();
 
-app.use(express.json({ limit: '4mb' }));
+app.use(express.json({ limit: CHAT_BODY_LIMIT }));
 
 function isValidAccessSession(req) {
   if (!APP_ACCESS_KEY) return false;
@@ -466,7 +467,14 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-
+app.use((error, req, res, next) => {
+  if (error.type === 'entity.too.large') {
+    return res.status(413).json({
+      error: `Request exceeds this server's ${CHAT_BODY_LIMIT} JSON body limit. Increase CHAT_BODY_LIMIT and the hosting platform's request limit.`
+    });
+  }
+  next(error);
+});
 
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);

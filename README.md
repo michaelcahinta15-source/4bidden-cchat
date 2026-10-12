@@ -16,6 +16,8 @@ Successful logins receive an HTTP-only, signed, SameSite=Strict session cookie t
 
 Use HTTPS whenever the app is reachable over a network. If HTTPS terminates at a trusted reverse proxy, set `TRUST_PROXY=true` so the session cookie receives the Secure attribute. Do not commit `.env`.
 
-## Deploying on Vercel
+## Large image and video uploads
 
-Vercel imposes a fixed request-body limit for serverless functions that cannot be raised with Express settings. The chat compresses attached images, samples video frames, and omits previously sent media from follow-up requests to stay below that platform limit. If one request still exceeds the app's safe payload size, attach fewer or smaller files.
+The chat accepts up to 50 MB of original attachments per conversation and caps each JSON chat request at 60 MB. The Express JSON parser defaults to 64 MB; override it with `CHAT_BODY_LIMIT` (for example, `100mb`) when your host permits larger requests. The browser compresses images and samples videos before sending them.
+
+The hosting platform and any reverse proxy must also allow requests at least as large as the configured parser limit. Serverless platforms such as Vercel enforce their own fixed function payload limit, which cannot be raised with `CHAT_BODY_LIMIT`; this app's larger request setting therefore requires deploying the Express server on a host that supports configurable request-body limits. Deploy the updated code there and configure the platform's body-size limit as well.

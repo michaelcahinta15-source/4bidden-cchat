@@ -562,9 +562,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 model
             });
             const requestSize = new TextEncoder().encode(requestBody).byteLength;
-            const maxRequestBytes = 3.5 * 1024 * 1024;
+            const maxRequestBytes = 60 * 1024 * 1024;
             if (requestSize > maxRequestBytes) {
-                throw new Error('This chat request is still too large to send. Attach fewer images or videos, or start a new chat.');
+                throw new Error("This chat request exceeds the app's 60 MB limit. Attach fewer or smaller files, or start a new chat.");
             }
 
             const response = await fetch('/api/chat', {
@@ -661,8 +661,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const currentSize = attachments.reduce((sum, file) => sum + file.size, 0);
         const addedSize = files.reduce((sum, file) => sum + file.size, 0);
-        if (conversationAttachmentBytes + currentSize + addedSize > 20 * 1024 * 1024) {
-            modelStatus.textContent = 'Attachments must total 20 MB or less per conversation. Start a new chat to reset the limit.';
+        if (conversationAttachmentBytes + currentSize + addedSize > 50 * 1024 * 1024) {
+            modelStatus.textContent = 'Attachments must total 50 MB or less per conversation. Start a new chat to reset the limit.';
             return;
         }
 

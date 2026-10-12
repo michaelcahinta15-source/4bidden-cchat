@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#171717">
+    <title>4bidden AI</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <a class="brand" href="/" aria-label="4bidden AI">
+                <span class="brand-mark">✳</span>
+                <span>4bidden<span class="brand-light">AI</span></span>
+            </a>
+            <button id="new-chat-btn" class="new-chat-btn" type="button">
+                <span aria-hidden="true">＋</span> New chat
+            </button>
+            <div class="sidebar-label">Workspace</div>
+            <div class="sidebar-current">
+                <span aria-hidden="true">✳</span>
+                <span id="sidebar-chat-title">New conversation</span>
+            </div>
+            <div class="sidebar-spacer"></div>
+            <div class="sidebar-note">
+                <span class="status-dot"></span>
+                <span id="model-status">Connecting to your model provider</span>
+            </div>
+            <div class="sidebar-footer">Your key stays in this browser tab</div>
+        </aside>
+
+        <main class="main-panel">
+            <header class="topbar">
+                <button id="mobile-new-chat" class="icon-button mobile-new-chat" type="button" aria-label="New chat">＋</button>
+                <div class="topbar-title">4bidden Chat <span class="topbar-divider">/</span> <span id="chat-title">New chat</span></div>
+                <div class="topbar-spacer"></div>
+                <button id="api-key-btn" class="api-key-button" type="button">Add provider API key</button>
+                <button id="logout-btn" class="api-key-button logout-button" type="button">Lock workspace</button>
+                <span class="secure-label"><span class="status-dot"></span> Private session</span>
+            </header>
+
+            <section id="conversation" class="conversation" aria-live="polite">
+                <div id="welcome" class="welcome">
+                    <div class="welcome-mark">✳</div>
+                    <h1>What can I help with?</h1>
+                    <p>Ask a question, explore an idea, or share an image or video.</p>
+                    <div class="suggestion-grid">
+                        <button class="suggestion" type="button" data-prompt="Explain a tricky idea in simple terms">
+                            <span class="suggestion-icon">✦</span>
+                            <span><strong>Explain something</strong><small>Make a complex idea clear</small></span>
+                        </button>
+                        <button class="suggestion" type="button" data-prompt="Help me brainstorm a creative project">
+                            <span class="suggestion-icon">◇</span>
+                            <span><strong>Brainstorm ideas</strong><small>Get a fresh perspective</small></span>
+                        </button>
+                        <button class="suggestion" type="button" data-prompt="Help me write or improve some code">
+                            <span class="suggestion-icon">{ }</span>
+                            <span><strong>Write some code</strong><small>Build and debug together</small></span>
+                        </button>
+                        <button class="suggestion" type="button" data-prompt="Give me a concise summary of this topic">
+                            <span class="suggestion-icon">↗</span>
+                            <span><strong>Explore a topic</strong><small>Get a concise overview</small></span>
+                        </button>
+                    </div>
+                </div>
+                <div id="chat-messages" class="messages"></div>
+            </section>
+
+            <footer class="composer-area">
+                <div id="attachment-preview" class="attachment-preview" aria-live="polite"></div>
+                <div class="composer">
+                    <textarea id="user-input" rows="1" placeholder="Message Grok-style assistant..." aria-label="Message Grok-style assistant"></textarea>
+                    <div class="composer-toolbar">
+                        <div class="composer-options">
+                            <label class="provider-label" for="provider-select">Provider</label>
+                            <select id="provider-select" aria-label="AI provider">
+                                <option value="nvidia-nim">NVIDIA NIM</option>
+                                <option value="google-ai-studio">Google AI Studio (Flash free tier)</option>
+                                <option value="openrouter">OpenRouter (free models only)</option>
+                            </select>
+                            <select id="model-select" aria-label="Choose an AI model" disabled>
+                                <option value="">Scanning available models...</option>
+                            </select>
+                            <button id="scan-models-btn" class="scan-button" type="button" title="Scan available models" aria-label="Scan available models">↻</button>
+                        </div>
+                        <div class="composer-actions">
+                            <input id="attachment-input" type="file" accept="image/*,video/*" multiple hidden>
+                            <button id="attach-btn" class="icon-button attach-button" type="button" aria-label="Attach photos or videos" title="Attach photos or videos">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>
+                            </button>
+                            <button id="send-btn" class="send-button" type="button" aria-label="Send message">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-4 14-3-6-7-1Z"/><path d="m12 13 7-8"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <p class="composer-disclaimer">Grok-style responses use the selected provider and model; free access and usage limits depend on that provider. This is not the xAI Grok model. Images are analyzed directly. Videos use sampled frames; audio isn't transcribed. AI can make mistakes.</p>
+            </footer>
+        </main>
+    </div>
+    <dialog id="api-key-dialog" class="api-key-dialog" aria-labelledby="api-key-title">
+        <form id="api-key-form" class="api-key-form">
+            <button id="close-api-key" class="dialog-close" type="button" aria-label="Close">×</button>
+            <div class="dialog-mark">🔑</div>
+            <h2 id="api-key-title">Provider API keys</h2>
+            <p class="dialog-description">Enter one or more keys. They are saved in this browser tab and sent only to the selected provider through this app.</p>
+            <div class="api-key-entry">
+                <label for="nvidia-api-key-input">NVIDIA NIM API key</label>
+                <input id="nvidia-api-key-input" data-api-provider="nvidia-nim" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your NVIDIA API key">
+                <button class="remove-saved-key" type="button" data-remove-provider="nvidia-nim" aria-label="Remove saved NVIDIA NIM key">Remove</button>
+            </div>
+            <div class="api-key-entry">
+                <label for="google-api-key-input">Google AI Studio API key</label>
+                <input id="google-api-key-input" data-api-provider="google-ai-studio" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your Google AI Studio key">
+                <button class="remove-saved-key" type="button" data-remove-provider="google-ai-studio" aria-label="Remove saved Google AI Studio key">Remove</button>
+            </div>
+            <div class="api-key-entry">
+                <label for="openrouter-api-key-input">OpenRouter API key</label>
+                <input id="openrouter-api-key-input" data-api-provider="openrouter" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your OpenRouter key">
+                <button class="remove-saved-key" type="button" data-remove-provider="openrouter" aria-label="Remove saved OpenRouter key">Remove</button>
+            </div>
+            <p id="api-key-status" class="api-key-status" aria-live="polite"></p>
+            <div class="dialog-actions">
+                <span></span>
+                <button class="save-key-button" type="submit">Save keys for this tab</button>
+            </div>
+            <p class="key-safety-note">Only enter your key if you trust this app and computer.</p>
+        </form>
+    </dialog>
+    <script src="script.js"></script>
+</body>
+</html>

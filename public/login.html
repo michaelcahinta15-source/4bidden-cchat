@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101115">
+    <title>Private access · 4bidden</title>
+    <link rel="stylesheet" href="/login.css">
+</head>
+<body>
+    <main class="access-shell">
+        <div class="ambient ambient-one" aria-hidden="true"></div>
+        <div class="ambient ambient-two" aria-hidden="true"></div>
+        <section class="access-card" aria-labelledby="access-title">
+            <a class="brand" href="/login" aria-label="4bidden">
+                <span class="brand-symbol" aria-hidden="true">✳</span>
+                <span>4bidden</span>
+            </a>
+
+            <div class="access-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 10 0v3"/><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M12 14v3"/></svg>
+            </div>
+            <p class="eyebrow">PRIVATE WORKSPACE</p>
+            <h1 id="access-title">Madaling buhay<br>para sayo putang inaka.</h1>
+            <p class="access-copy">Enter your private access key to continue to your AI workspace.</p>
+
+            <form id="access-form">
+                <label for="access-key">Workspace access key pag di mo alam message mo si Michael Cahinta </label>
+                <div class="key-field">
+                    <input id="access-key" name="key" type="password" autocomplete="current-password" placeholder="Enter your access key" required autofocus>
+                    <button id="toggle-key" type="button" aria-label="Show access key" title="Show access key">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                </div>
+                <p id="access-status" class="access-status" aria-live="polite"></p>
+                <button id="unlock-button" class="unlock-button" type="submit">
+                    <span>Unlock workspace</span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                </button>
+            </form>
+            <div class="card-footer">
+                <span class="secure-dot"></span>
+                <span>Access is private to people with your key</span>
+            </div>
+        </section>
+        <p class="page-note">YOUR SPACE. YOUR CONVERSATIONS.</p>
+    </main>
+    <script src="/login.js"></script>
+</body>
+</html>

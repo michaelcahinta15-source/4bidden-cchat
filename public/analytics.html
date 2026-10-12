@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#101312">
+    <title>Usage analytics · 4bidden AI</title>
+    <link rel="stylesheet" href="/analytics.css">
+</head>
+<body>
+    <main class="dashboard">
+        <header class="page-header">
+            <a class="back-link" href="/">← Back to chat</a>
+            <div class="title-row">
+                <div>
+                    <p class="eyebrow">4BIDDEN AI / OBSERVABILITY</p>
+                    <h1>Usage analytics</h1>
+                    <p class="subtitle">Live activity and private access-log analysis.</p>
+                </div>
+                <div class="live-pill"><span class="pulse-dot"></span> LIVE <span id="last-updated">Updating…</span></div>
+            </div>
+        </header>
+
+        <section class="metric-grid" aria-label="Live usage metrics">
+            <article class="metric-card">
+                <div class="metric-label">USERS ONLINE <span class="metric-icon">◉</span></div>
+                <strong id="active-users">—</strong>
+                <p>Active within the last 90 seconds</p>
+            </article>
+            <article class="metric-card">
+                <div class="metric-label">PAGE VIEWS <span class="metric-icon">↗</span></div>
+                <strong id="page-views">—</strong>
+                <p>Since this server started</p>
+            </article>
+            <article class="metric-card">
+                <div class="metric-label">UNIQUE BROWSERS <span class="metric-icon">⌘</span></div>
+                <strong id="unique-visitors">—</strong>
+                <p>Anonymous visitors since restart</p>
+            </article>
+        </section>
+
+        <section class="panel live-panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">REAL-TIME</p>
+                    <h2>Traffic overview</h2>
+                </div>
+                <span class="refresh-label">Refreshes every 15 seconds</span>
+            </div>
+            <div id="traffic-chart" class="traffic-chart" role="img" aria-label="Daily page views for the last 14 days"></div>
+            <div class="chart-legend"><span></span> Page views · UTC</div>
+            <p id="live-error" class="inline-error" role="status" hidden></p>
+        </section>
+
+        <section class="panel import-panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">LOCAL ANALYSIS</p>
+                    <h2>Analyze access logs</h2>
+                </div>
+                <span class="local-badge">Stays in your browser</span>
+            </div>
+            <p class="import-description">Paste Apache/Nginx access logs or select a .log or .txt file. Common and combined formats are supported. Log contents are never uploaded.</p>
+            <label class="file-picker" for="log-file">Choose log file <span>Apache / Nginx · max 5 MB</span></label>
+            <input id="log-file" type="file" accept=".log,.txt,text/plain">
+            <label class="sr-only" for="log-input">Paste Apache or Nginx access logs</label>
+            <textarea id="log-input" spellcheck="false" placeholder='127.0.0.1 - - [12/Oct/2026:09:15:03 +0000] "GET / HTTP/1.1" 200 1240'></textarea>
+            <div class="log-actions">
+                <p id="parse-status" role="status" aria-live="polite">No log data loaded.</p>
+                <button id="analyze-btn" type="button">Analyze logs</button>
+                <button id="clear-btn" class="secondary-button" type="button">Clear</button>
+            </div>
+            <div id="log-results" class="log-results" hidden>
+                <div class="log-stat"><span>Requests</span><strong id="log-requests">0</strong></div>
+                <div class="log-stat"><span>Unique addresses</span><strong id="log-addresses">0</strong></div>
+                <div class="log-stat"><span>Errors (4xx/5xx)</span><strong id="log-errors">0</strong></div>
+                <div class="log-stat"><span>Unparsed lines</span><strong id="log-skipped">0</strong></div>
+                <div class="top-paths">
+                    <h3>Top requested paths</h3>
+                    <ol id="top-path-list"></ol>
+                </div>
+            </div>
+            <p class="privacy-note">Address totals are calculated locally and the addresses are not displayed or saved. Live usage counters are held in this server process and reset on restart; they are not shared across serverless instances.</p>
+        </section>
+        <footer>Private workspace analytics <span>·</span> No IP-based visitor tracking</footer>
+    </main>
+    <script src="/analytics.js" defer></script>
+</body>
+</html>

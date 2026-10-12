@@ -55,10 +55,19 @@ async function fetchWithProviderRetry(url, options) {
 const app = express();
 const PORT = process.env.PORT || 3000;
 if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1);
-const APP_ACCESS_KEY = process.env.APP_ACCESS_KEY?.trim() || '';
+const APP_ACCESS_KEYS = [
+  process.env.APP_ACCESS_KEY?.trim(),
+  process.env.APP_ACCESS_KEY_2?.trim()
+].map((key, index) => key ? { key, canViewAnalytics: index === 0 } : null)
+  .filter(Boolean);
 const CHAT_BODY_LIMIT = process.env.CHAT_BODY_LIMIT || '64mb';
 const ACCESS_COOKIE = 'ei_access';
 const ACCESS_SESSION_MS = 12 * 60 * 60 * 1000;
+const ANALYTICS_ACTIVE_WINDOW_MS = 90 * 1000;
+const analyticsSessions = new Map();
+const analyticsVisitors = new Set();
+const analyticsDailyViews = new Map();
+let analyticsPageViews = 0;
 const loginAttempts = new Map();
 const providers = {
   'nvidia-nim': {
@@ -92,34 +101,39 @@ const discoveredModelCapabilities = new Map();
 
 app.use(express.json({ limit: CHAT_BODY_LIMIT }));
 
-function isValidAccessSession(req) {
-  if (!APP_ACCESS_KEY) return false;
+function getAccessSessionAnalyticsPermission(req) {
+  if (!APP_ACCESS_KEYS.length) return null;
   const cookieHeader = req.headers.cookie || '';
   const cookie = cookieHeader.split(';').map((part) => part.trim())
     .find((part) => part.startsWith(`${ACCESS_COOKIE}=`));
-  if (!cookie) return false;
+  if (!cookie) return null;
 
   const [expiresAtText, signature] = cookie.slice(ACCESS_COOKIE.length + 1).split('.');
   const expiresAt = Number(expiresAtText);
   if (!Number.isSafeInteger(expiresAt) || expiresAt <= Date.now() ||
-      expiresAt > Date.now() + ACCESS_SESSION_MS) return false;
+      expiresAt > Date.now() + ACCESS_SESSION_MS) return null;
 
-  const expectedSignature = crypto.createHmac('sha256', APP_ACCESS_KEY)
-    .update(expiresAtText)
-    .digest();
   let providedSignature;
   try {
     providedSignature = Buffer.from(signature, 'base64url');
   } catch {
-    return false;
+    return null;
   }
-  return providedSignature.length === expectedSignature.length
-    && crypto.timingSafeEqual(providedSignature, expectedSignature);
+  for (const { key, canViewAnalytics } of APP_ACCESS_KEYS) {
+    const expectedSignature = crypto.createHmac('sha256', key)
+      .update(expiresAtText)
+      .digest();
+    if (providedSignature.length === expectedSignature.length
+        && crypto.timingSafeEqual(providedSignature, expectedSignature)) {
+      return canViewAnalytics;
+    }
+  }
+  return null;
 }
 
-function createAccessCookie(req, res) {
+function createAccessCookie(req, res, key) {
   const expiresAt = Date.now() + ACCESS_SESSION_MS;
-  const signature = crypto.createHmac('sha256', APP_ACCESS_KEY)
+  const signature = crypto.createHmac('sha256', key)
     .update(String(expiresAt))
     .digest('base64url');
   const secure = req.secure ? '; Secure' : '';
@@ -166,7 +180,7 @@ app.get('/login.js', (req, res) => {
 });
 
 app.post('/api/access/login', (req, res) => {
-  if (!APP_ACCESS_KEY) {
+  if (!APP_ACCESS_KEYS.length) {
     return res.status(503).json({ error: 'App access is not configured. Set APP_ACCESS_KEY in the server .env file.' });
   }
   if (!checkLoginRateLimit(req, res)) return;
@@ -175,14 +189,17 @@ app.post('/api/access/login', (req, res) => {
   if (submittedKey.length > 512) {
     return res.status(401).json({ error: 'That access key is not correct.' });
   }
-  const expectedHash = crypto.createHash('sha256').update(APP_ACCESS_KEY).digest();
   const submittedHash = crypto.createHash('sha256').update(submittedKey).digest();
-  if (!crypto.timingSafeEqual(expectedHash, submittedHash)) {
+  const matchingKey = APP_ACCESS_KEYS.find(({ key }) => {
+    const expectedHash = crypto.createHash('sha256').update(key).digest();
+    return crypto.timingSafeEqual(expectedHash, submittedHash);
+  });
+  if (!matchingKey) {
     return res.status(401).json({ error: 'That access key is not correct.' });
   }
 
   loginAttempts.delete(req.ip || req.socket.remoteAddress || 'unknown');
-  createAccessCookie(req, res);
+  createAccessCookie(req, res, matchingKey.key);
   res.json({ ok: true });
 });
 
@@ -192,11 +209,77 @@ app.post('/api/access/logout', (req, res) => {
 });
 
 app.use((req, res, next) => {
-  if (isValidAccessSession(req)) return next();
+  const canViewAnalytics = getAccessSessionAnalyticsPermission(req);
+  if (canViewAnalytics !== null) {
+    req.canViewAnalytics = canViewAnalytics;
+    return next();
+  }
   if (req.path.startsWith('/api/')) {
     return res.status(401).json({ error: 'Enter the app access key to continue.' });
   }
   return res.redirect('/login');
+});
+
+app.get('/api/access/session', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ canViewAnalytics: req.canViewAnalytics });
+});
+
+function pruneAnalyticsSessions(now = Date.now()) {
+  for (const [sessionId, session] of analyticsSessions) {
+    if (now - session.lastSeenAt > ANALYTICS_ACTIVE_WINDOW_MS) {
+      analyticsSessions.delete(sessionId);
+    }
+  }
+}
+
+app.get('/analytics', (req, res) => {
+  if (!req.canViewAnalytics) {
+    return res.status(403).send('Analytics access is restricted.');
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'public', 'analytics.html'));
+});
+
+app.get('/api/analytics/summary', (req, res) => {
+  if (!req.canViewAnalytics) {
+    return res.status(403).json({ error: 'Analytics access is restricted.' });
+  }
+  pruneAnalyticsSessions();
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    activeUsers: new Set([...analyticsSessions.values()].map((session) => session.visitorId)).size,
+    pageViews: analyticsPageViews,
+    uniqueVisitors: analyticsVisitors.size,
+    dailyViews: [...analyticsDailyViews.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .slice(-14)
+      .map(([date, views]) => ({ date, views }))
+  });
+});
+
+app.post('/api/analytics/heartbeat', (req, res) => {
+  if (!req.canViewAnalytics) {
+    return res.status(403).json({ error: 'Analytics access is restricted.' });
+  }
+  const visitorId = req.body?.visitorId;
+  const sessionId = req.body?.sessionId;
+  const validId = (value) => typeof value === 'string' && /^[\w-]{16,64}$/.test(value);
+  if (!validId(visitorId) || !validId(sessionId)) {
+    return res.status(400).json({ error: 'Invalid analytics session.' });
+  }
+
+  const now = Date.now();
+  pruneAnalyticsSessions(now);
+  const existingSession = analyticsSessions.get(sessionId);
+  if (!existingSession) {
+    analyticsPageViews += 1;
+    const today = new Date(now).toISOString().slice(0, 10);
+    analyticsDailyViews.set(today, (analyticsDailyViews.get(today) || 0) + 1);
+  }
+  analyticsSessions.set(sessionId, { visitorId, lastSeenAt: now });
+  analyticsVisitors.add(visitorId);
+  res.sendStatus(204);
 });
 
 app.use(express.static(path.join(__dirname, 'public')));

@@ -37,6 +37,7 @@ button {
 .app-shell {
     display: flex;
     width: 100%;
+    min-width: 0;
     height: 100vh;
     height: 100dvh;
     overflow: hidden;
@@ -185,11 +186,27 @@ button {
     font-size: 11px;
 }
 
+.analytics-link {
+    display: block;
+    padding: 8px 7px;
+    border-radius: 7px;
+    color: #a9a9a9;
+    font-size: 11px;
+    text-decoration: none;
+}
+
+.analytics-link:hover {
+    background: #242424;
+    color: #f0f0f0;
+}
+
 .main-panel {
     display: flex;
-    flex: 1;
+    flex: 1 1 0%;
     flex-direction: column;
     min-width: 0;
+    min-height: 0;
+    overflow: hidden;
     height: 100%;
 }
 
@@ -442,7 +459,7 @@ button {
 
 .conversation {
     position: relative;
-    flex: 1;
+    flex: 1 1 0%;
     min-height: 0;
     overflow-y: auto;
     scroll-behavior: smooth;

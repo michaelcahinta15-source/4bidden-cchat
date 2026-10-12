@@ -89,7 +89,7 @@ const NVIDIA_MODEL_CAPABILITIES = {
 };
 const discoveredModelCapabilities = new Map();
 
-app.use(express.json({ limit: '32mb' }));
+app.use(express.json({ limit: '4mb' }));
 
 function isValidAccessSession(req) {
   if (!APP_ACCESS_KEY) return false;

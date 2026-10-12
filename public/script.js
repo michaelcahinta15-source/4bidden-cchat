@@ -313,12 +313,59 @@ document.addEventListener('DOMContentLoaded', () => {
         attachmentPreview.hidden = attachments.length === 0;
     }
 
-    function fileToDataUrl(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.addEventListener('load', () => resolve(reader.result));
-            reader.addEventListener('error', () => reject(new Error(`Could not read ${file.name}.`)));
-            reader.readAsDataURL(file);
+    async function imageToDataUrl(file) {
+        let image;
+        try {
+            image = await createImageBitmap(file);
+        } catch {
+            throw new Error(`Could not read ${file.name} as an image.`);
+        }
+
+        try {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            if (!context) throw new Error('Your browser could not prepare this image.');
+
+            let scale = Math.min(1, 1600 / image.width, 1600 / image.height);
+            const maxBytes = 700 * 1024;
+            while (scale >= 0.25) {
+                canvas.width = Math.max(1, Math.round(image.width * scale));
+                canvas.height = Math.max(1, Math.round(image.height * scale));
+                context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+                for (const quality of [0.82, 0.68, 0.54, 0.4]) {
+                    const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                    if ((dataUrl.length - dataUrl.indexOf(',') - 1) * 0.75 <= maxBytes) {
+                        return dataUrl;
+                    }
+                }
+                scale *= 0.75;
+            }
+            throw new Error(`Could not compress ${file.name} enough to send it.`);
+        } finally {
+            image.close();
+        }
+    }
+
+    function prepareRequestMessages(history) {
+        const latestUserMessage = history.findLastIndex((message) => message.role === 'user');
+        return history.map((message, index) => {
+            let content = message.content;
+            if (message.mediaTypes?.length && index !== latestUserMessage && Array.isArray(content)) {
+                content = content.filter((part) =>
+                    part.type !== 'image_url' &&
+                    !(part.type === 'text' && /^Video frame at [\d.]+ seconds:$/.test(part.text))
+                );
+                content.push({
+                    type: 'text',
+                    text: 'Media attached in this earlier message was omitted from follow-up context.'
+                });
+            }
+            return {
+                role: message.role,
+                content,
+                ...(message.mediaTypes?.length ? { mediaTypes: message.mediaTypes } : {})
+            };
         });
     }
 
@@ -470,7 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                     });
                 } else {
-                    const dataUrl = await fileToDataUrl(file.file);
+                    const dataUrl = await imageToDataUrl(file.file);
                     const imagePart = { type: 'image_url', image_url: { url: dataUrl } };
                     displayContent.push(imagePart);
                     requestContent.push(imagePart);
@@ -509,17 +556,24 @@ document.addEventListener('DOMContentLoaded', () => {
             chatMessages.appendChild(typingIndicator);
             scrollToBottom();
 
+            const requestBody = JSON.stringify({
+                messages: prepareRequestMessages(conversationHistory),
+                provider: providerSelect.value,
+                model
+            });
+            const requestSize = new TextEncoder().encode(requestBody).byteLength;
+            const maxRequestBytes = 3.5 * 1024 * 1024;
+            if (requestSize > maxRequestBytes) {
+                throw new Error('This chat request is still too large to send. Attach fewer images or videos, or start a new chat.');
+            }
+
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Provider-API-Key': apiKey
                 },
-                body: JSON.stringify({
-                    messages: conversationHistory,
-                    provider: providerSelect.value,
-                    model
-                })
+                body: requestBody
             });
             typingIndicator.remove();
             let aiMessage;

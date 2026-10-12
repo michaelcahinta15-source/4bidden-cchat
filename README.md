@@ -15,3 +15,7 @@ The chat page and API require the shared access key configured by the server ope
 Successful logins receive an HTTP-only, signed, SameSite=Strict session cookie that expires after 12 hours. Login attempts are rate-limited. The key is never sent to the browser except when the visitor submits it over the connection to sign in.
 
 Use HTTPS whenever the app is reachable over a network. If HTTPS terminates at a trusted reverse proxy, set `TRUST_PROXY=true` so the session cookie receives the Secure attribute. Do not commit `.env`.
+
+## Deploying on Vercel
+
+Vercel imposes a fixed request-body limit for serverless functions that cannot be raised with Express settings. The chat compresses attached images, samples video frames, and omits previously sent media from follow-up requests to stay below that platform limit. If one request still exceeds the app's safe payload size, attach fewer or smaller files.

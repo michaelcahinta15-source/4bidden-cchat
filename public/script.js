@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const modelSelect = document.getElementById('model-select');
     const scanModelsBtn = document.getElementById('scan-models-btn');
     const modelStatus = document.getElementById('model-status');
+    const chatHistoryList = document.getElementById('chat-history-list');
     const attachmentInput = document.getElementById('attachment-input');
     const attachmentPreview = document.getElementById('attachment-preview');
     const attachBtn = document.getElementById('attach-btn');
@@ -23,19 +24,220 @@ document.addEventListener('DOMContentLoaded', () => {
         'google-ai-studio': { name: 'Google AI Studio', keyName: 'google-ai-studio-api-key' },
         openrouter: { name: 'OpenRouter', keyName: 'openrouter-api-key' }
     };
+
+    function getStoredApiKey(keyName) {
+        try {
+            return localStorage.getItem(`grok-chat:${keyName}`) || '';
+        } catch (error) {
+            console.error('Could not read provider API key from browser storage:', error);
+            apiKeyStatus.textContent = 'Browser storage is unavailable. Enable site storage to save provider API keys.';
+            return '';
+        }
+    }
+
+    try {
+        Object.values(providerDetails).forEach(({ keyName }) => {
+            const storageKey = `grok-chat:${keyName}`;
+            const legacyKey = sessionStorage.getItem(storageKey);
+            if (!localStorage.getItem(storageKey) && legacyKey) {
+                localStorage.setItem(storageKey, legacyKey);
+            }
+            if (legacyKey) sessionStorage.removeItem(storageKey);
+        });
+    } catch (error) {
+        console.error('Could not migrate saved provider API keys:', error);
+        apiKeyStatus.textContent = 'Could not preserve a previously saved key. Check this browser’s storage settings.';
+    }
+
     let conversationHistory = [];
     let attachments = [];
     let displayedMediaUrls = [];
     let availableModels = [];
     let conversationAttachmentBytes = 0;
     let isSending = false;
+    let chatHistory = [];
+    let activeChatId = null;
+    let historyDatabasePromise;
+
+    function openHistoryDatabase() {
+        if (!historyDatabasePromise) {
+            historyDatabasePromise = new Promise((resolve, reject) => {
+                if (!window.indexedDB) {
+                    reject(new Error('This browser does not support saved chat history.'));
+                    return;
+                }
+
+                const request = window.indexedDB.open('4bidden-chat-history', 1);
+                request.onupgradeneeded = () => {
+                    request.result.createObjectStore('chats', { keyPath: 'id' });
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error || new Error('Could not open saved chat history.'));
+            });
+        }
+        return historyDatabasePromise;
+    }
+
+    async function getSavedChats() {
+        const database = await openHistoryDatabase();
+        return new Promise((resolve, reject) => {
+            const transaction = database.transaction('chats', 'readonly');
+            const request = transaction.objectStore('chats').getAll();
+            request.onsuccess = () => resolve(request.result.sort((a, b) => b.updatedAt - a.updatedAt));
+            request.onerror = () => reject(request.error || new Error('Could not read saved chats.'));
+        });
+    }
+
+    async function saveChatRecord(chat) {
+        const database = await openHistoryDatabase();
+        return new Promise((resolve, reject) => {
+            const transaction = database.transaction('chats', 'readwrite');
+            transaction.objectStore('chats').put(chat);
+            transaction.oncomplete = resolve;
+            transaction.onerror = () => reject(transaction.error || new Error('Could not save this chat.'));
+            transaction.onabort = () => reject(transaction.error || new Error('Saving this chat was interrupted.'));
+        });
+    }
+
+    function renderChatHistory() {
+        chatHistoryList.replaceChildren();
+        if (!chatHistory.length) {
+            const empty = document.createElement('div');
+            empty.className = 'chat-history-empty';
+            empty.textContent = 'Your chats will appear here';
+            chatHistoryList.appendChild(empty);
+            return;
+        }
+
+        chatHistory.forEach((chat) => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'chat-history-item';
+            item.classList.toggle('active', chat.id === activeChatId);
+            item.title = chat.title;
+            item.addEventListener('click', () => activateChat(chat.id));
+
+            const icon = document.createElement('span');
+            icon.className = 'chat-history-item-icon';
+            icon.textContent = '✳';
+            icon.setAttribute('aria-hidden', 'true');
+            const title = document.createElement('span');
+            title.className = 'chat-history-item-title';
+            title.textContent = chat.title;
+            item.append(icon, title);
+            chatHistoryList.appendChild(item);
+        });
+    }
+
+    function setChatTitle(title) {
+        document.getElementById('chat-title').textContent =
+            title.length > 48 ? `${title.slice(0, 45)}...` : title;
+    }
+
+    function createChatId() {
+        return window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    function releaseDisplayedMedia() {
+        displayedMediaUrls.forEach((url) => URL.revokeObjectURL(url));
+        displayedMediaUrls = [];
+    }
+
+    function restoreDisplayContent(content) {
+        if (!Array.isArray(content)) return content;
+        return content.map((part) => {
+            if (part.videoBlob) {
+                const url = URL.createObjectURL(part.videoBlob);
+                displayedMediaUrls.push(url);
+                return { ...part, video_url: { url }, videoBlob: undefined };
+            }
+            return part;
+        });
+    }
+
+    function getStoredDisplayContent(content, files) {
+        if (!Array.isArray(content)) return content;
+        const filesByUrl = new Map(files.map((file) => [file.previewUrl, file.file]));
+        return content.map((part) => {
+            const url = part.video_url?.url;
+            const videoBlob = url && filesByUrl.get(url);
+            return videoBlob
+                ? { ...part, video_url: { url: '' }, videoBlob }
+                : part;
+        });
+    }
+
+    async function saveActiveChat() {
+        const chat = chatHistory.find((item) => item.id === activeChatId);
+        if (!chat) return;
+        chat.updatedAt = Date.now();
+        chatHistory.sort((a, b) => b.updatedAt - a.updatedAt);
+        renderChatHistory();
+        try {
+            await saveChatRecord(chat);
+        } catch (error) {
+            console.error('Could not save chat history:', error);
+            modelStatus.textContent = `Could not save chat history: ${error.message}`;
+        }
+    }
+
+    async function loadSavedChats() {
+        try {
+            chatHistory = await getSavedChats();
+            renderChatHistory();
+            if (chatHistory.length) {
+                await activateChat(chatHistory[0].id);
+            } else {
+                await scanModels();
+            }
+        } catch (error) {
+            console.error('Could not load chat history:', error);
+            modelStatus.textContent = `Could not load chat history: ${error.message}`;
+            await scanModels();
+        }
+    }
+
+    async function activateChat(chatId) {
+        if (isSending) {
+            modelStatus.textContent = 'Wait for the current response to finish before switching chats.';
+            return;
+        }
+        const chat = chatHistory.find((item) => item.id === chatId);
+        if (!chat) return;
+
+        attachments.forEach((file) => URL.revokeObjectURL(file.previewUrl));
+        attachments = [];
+        updateAttachmentPreview();
+        releaseDisplayedMedia();
+        activeChatId = chat.id;
+        conversationHistory = chat.messages.map((message) => ({
+            role: message.role,
+            content: message.requestContent,
+            ...(message.mediaTypes?.length ? { mediaTypes: message.mediaTypes } : {})
+        }));
+        conversationAttachmentBytes = chat.attachmentBytes || 0;
+        chatMessages.replaceChildren();
+        welcome.hidden = true;
+        chat.messages.forEach((message) => {
+            addMessage(restoreDisplayContent(message.displayContent), message.role);
+        });
+        setChatTitle(chat.title);
+        renderChatHistory();
+        providerSelect.value = chat.provider || providerSelect.value;
+        updateApiKeyStatus();
+        await scanModels();
+        if (chat.model && availableModels.some((model) => model.id === chat.model)) {
+            modelSelect.value = chat.model;
+            ensureModelSupportsAttachments();
+        }
+    }
 
     function getProviderDetails() {
         return providerDetails[providerSelect.value];
     }
 
     function getApiKey() {
-        return sessionStorage.getItem(`grok-chat:${getProviderDetails().keyName}`) || '';
+        return getStoredApiKey(getProviderDetails().keyName);
     }
 
     function updateApiKeyStatus() {
@@ -49,9 +251,9 @@ document.addEventListener('DOMContentLoaded', () => {
         apiKeyTitle.textContent = 'Provider API keys';
         apiKeyForm.querySelectorAll('[data-api-provider]').forEach((input) => {
             const provider = providerDetails[input.dataset.apiProvider];
-            const configured = Boolean(sessionStorage.getItem(`grok-chat:${provider.keyName}`));
+            const configured = Boolean(getStoredApiKey(provider.keyName));
             input.value = '';
-            input.placeholder = configured ? 'Saved for this tab; enter to replace' : `Paste your ${provider.name} key`;
+            input.placeholder = configured ? 'Saved on this browser; enter to replace' : `Paste your ${provider.name} key`;
             apiKeyForm.querySelector(`[data-remove-provider="${input.dataset.apiProvider}"]`).disabled = !configured;
         });
         apiKeyStatus.textContent = 'Enter one or more keys to save or replace them. Leave other fields blank to keep their saved keys.';
@@ -271,16 +473,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return true;
         }
 
-        const compatibleModel = availableModels.find((model) =>
-            mediaTypes.every((type) => model.capabilities.includes(type))
-        );
-        if (compatibleModel) {
-            modelSelect.value = compatibleModel.id;
-            modelStatus.textContent = `Switched to ${compatibleModel.name} for ${mediaTypes.join(' and ')} input`;
-            return true;
-        }
-
-        modelStatus.textContent = `No available model supports ${mediaTypes.join(' and ')} input.`;
+        modelStatus.textContent = selectedModel
+            ? `${selectedModel.name} does not support ${mediaTypes.join(' and ')} input. Choose a compatible model to send.`
+            : `No available model supports ${mediaTypes.join(' and ')} input.`;
         return false;
     }
 
@@ -537,14 +732,37 @@ document.addEventListener('DOMContentLoaded', () => {
             const mediaTypes = [...new Set(selectedAttachments.map((file) =>
                 file.type.startsWith('video/') ? 'video' : 'image'
             ))];
-            conversationHistory.push({ role: 'user', content: requestMessageContent, mediaTypes });
-            conversationAttachmentBytes += selectedAttachments.reduce((sum, file) => sum + file.size, 0);
-
             const title = userText || selectedAttachments[0]?.name || 'Media conversation';
-            document.getElementById('chat-title').textContent =
-                title.length > 48 ? `${title.slice(0, 45)}...` : title;
-            document.getElementById('sidebar-chat-title').textContent =
-                title.length > 30 ? `${title.slice(0, 27)}...` : title;
+            if (!activeChatId) {
+                const now = Date.now();
+                const chat = {
+                    id: createChatId(),
+                    title,
+                    createdAt: now,
+                    updatedAt: now,
+                    provider: providerSelect.value,
+                    model,
+                    attachmentBytes: 0,
+                    messages: []
+                };
+                chatHistory.unshift(chat);
+                activeChatId = chat.id;
+            }
+            const activeChat = chatHistory.find((chat) => chat.id === activeChatId);
+            activeChat.provider = providerSelect.value;
+            activeChat.model = model;
+            activeChat.messages.push({
+                role: 'user',
+                requestContent: requestMessageContent,
+                displayContent: getStoredDisplayContent(displayContent, selectedAttachments),
+                mediaTypes
+            });
+            const addedAttachmentBytes = selectedAttachments.reduce((sum, file) => sum + file.size, 0);
+            activeChat.attachmentBytes += addedAttachmentBytes;
+            conversationAttachmentBytes += addedAttachmentBytes;
+            conversationHistory.push({ role: 'user', content: requestMessageContent, mediaTypes });
+            setChatTitle(activeChat.title);
+            await saveActiveChat();
             userInput.value = '';
             userInput.style.height = 'auto';
             attachments = [];
@@ -600,6 +818,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 addMessage(aiMessage, 'assistant');
             }
             conversationHistory.push({ role: 'assistant', content: aiMessage });
+            activeChat.messages.push({
+                role: 'assistant',
+                requestContent: aiMessage,
+                displayContent: aiMessage
+            });
+            activeChat.model = modelSelect.value || model;
+            await saveActiveChat();
         } catch (error) {
             console.error('Error:', error);
             const typingIndicator = chatMessages.querySelector('.typing-indicator');
@@ -693,11 +918,8 @@ document.addEventListener('DOMContentLoaded', () => {
             size: file.size,
             previewUrl: URL.createObjectURL(file)
         }));
-        if (modelSelect.value !== compatibleModel.id) {
-            modelSelect.value = compatibleModel.id;
-            modelStatus.textContent = `Selected ${compatibleModel.name} for ${[...requiredMediaTypes].join(' and ')} input`;
-        }
         updateAttachmentPreview();
+        ensureModelSupportsAttachments();
         attachmentInput.value = '';
         userInput.focus();
     }
@@ -765,32 +987,41 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('close-api-key').addEventListener('click', () => apiKeyDialog.close());
     apiKeyForm.addEventListener('submit', (event) => {
         event.preventDefault();
-        let savedCount = 0;
-        apiKeyForm.querySelectorAll('[data-api-provider]').forEach((input) => {
+    });
+    apiKeyForm.querySelectorAll('[data-api-provider]').forEach((input) => {
+        input.addEventListener('input', () => {
             const apiKey = input.value.trim();
-            if (!apiKey) return;
+            if (!apiKey) {
+                apiKeyStatus.textContent = 'No key entered. Existing saved keys are unchanged; use Remove to delete one.';
+                return;
+            }
+
             const provider = providerDetails[input.dataset.apiProvider];
-            sessionStorage.setItem(`grok-chat:${provider.keyName}`, apiKey);
-            input.value = '';
-            savedCount += 1;
+            try {
+                localStorage.setItem(`grok-chat:${provider.keyName}`, apiKey);
+                const removeButton = apiKeyForm.querySelector(
+                    `[data-remove-provider="${input.dataset.apiProvider}"]`
+                );
+                removeButton.disabled = false;
+                apiKeyStatus.textContent = `${provider.name} key saved automatically on this browser.`;
+                updateApiKeyStatus();
+            } catch (error) {
+                console.error('Could not save provider API key:', error);
+                apiKeyStatus.textContent = 'Could not save this key in browser storage. Check browser storage settings and try again.';
+            }
         });
-        if (!savedCount) {
-            apiKeyStatus.textContent = 'No new keys entered. Any keys already saved for this tab were kept.';
-            return;
-        }
-        apiKeyStatus.textContent = `${savedCount} API key${savedCount === 1 ? '' : 's'} saved for this browser tab.`;
-        updateApiKeyStatus();
-        apiKeyDialog.close();
-        if (getApiKey()) {
-            scanModels();
-        } else {
-            modelStatus.textContent = `Key saved. Select ${getProviderDetails().name} in the provider list to load its models.`;
-        }
+        input.addEventListener('blur', () => {
+            const provider = providerDetails[input.dataset.apiProvider];
+            if (input.value.trim() && input.dataset.apiProvider === providerSelect.value &&
+                getStoredApiKey(provider.keyName)) {
+                scanModels();
+            }
+        });
     });
     apiKeyForm.querySelectorAll('[data-remove-provider]').forEach((button) => {
         button.addEventListener('click', () => {
             const provider = providerDetails[button.dataset.removeProvider];
-            sessionStorage.removeItem(`grok-chat:${provider.keyName}`);
+            localStorage.removeItem(`grok-chat:${provider.keyName}`);
             const input = apiKeyForm.querySelector(`[data-api-provider="${button.dataset.removeProvider}"]`);
             input.value = '';
             input.placeholder = `Paste your ${provider.name} key`;
@@ -807,17 +1038,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function newChat() {
+        if (isSending) {
+            modelStatus.textContent = 'Wait for the current response to finish before starting a new chat.';
+            return;
+        }
         conversationHistory = [];
         conversationAttachmentBytes = 0;
+        activeChatId = null;
         chatMessages.replaceChildren();
         welcome.hidden = false;
-        document.getElementById('chat-title').textContent = 'New chat';
-        document.getElementById('sidebar-chat-title').textContent = 'New conversation';
+        setChatTitle('New chat');
         attachments.forEach((file) => URL.revokeObjectURL(file.previewUrl));
-        displayedMediaUrls.forEach((url) => URL.revokeObjectURL(url));
-        displayedMediaUrls = [];
+        releaseDisplayedMedia();
         attachments = [];
         updateAttachmentPreview();
+        renderChatHistory();
         userInput.value = '';
         userInput.focus();
     }
@@ -833,6 +1068,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     updateApiKeyStatus();
-    scanModels();
+    renderChatHistory();
+    loadSavedChats();
     userInput.focus();
 });

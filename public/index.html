@@ -17,17 +17,14 @@
             <button id="new-chat-btn" class="new-chat-btn" type="button">
                 <span aria-hidden="true">＋</span> New chat
             </button>
-            <div class="sidebar-label">Workspace</div>
-            <div class="sidebar-current">
-                <span aria-hidden="true">✳</span>
-                <span id="sidebar-chat-title">New conversation</span>
-            </div>
+            <div class="sidebar-label">History</div>
+            <div id="chat-history-list" class="chat-history-list" aria-label="Chat history"></div>
             <div class="sidebar-spacer"></div>
             <div class="sidebar-note">
                 <span class="status-dot"></span>
                 <span id="model-status">Connecting to your model provider</span>
             </div>
-            <div class="sidebar-footer">Your key stays in this browser tab</div>
+            <div class="sidebar-footer">Chat history is saved in this browser</div>
         </aside>
 
         <main class="main-panel">
@@ -104,7 +101,7 @@
             <button id="close-api-key" class="dialog-close" type="button" aria-label="Close">×</button>
             <div class="dialog-mark">🔑</div>
             <h2 id="api-key-title">Provider API keys</h2>
-            <p class="dialog-description">Enter one or more keys. They are saved in this browser tab and sent only to the selected provider through this app.</p>
+            <p class="dialog-description">Paste or type a key to save it automatically in this browser. It stays saved until you remove it or clear browser data, and is sent only to the selected provider through this app.</p>
             <div class="api-key-entry">
                 <label for="nvidia-api-key-input">NVIDIA NIM API key</label>
                 <input id="nvidia-api-key-input" data-api-provider="nvidia-nim" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your NVIDIA API key">
@@ -121,10 +118,6 @@
                 <button class="remove-saved-key" type="button" data-remove-provider="openrouter" aria-label="Remove saved OpenRouter key">Remove</button>
             </div>
             <p id="api-key-status" class="api-key-status" aria-live="polite"></p>
-            <div class="dialog-actions">
-                <span></span>
-                <button class="save-key-button" type="submit">Save keys for this tab</button>
-            </div>
             <p class="key-safety-note">Only enter your key if you trust this app and computer.</p>
         </form>
     </dialog>
